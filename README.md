@@ -1,6 +1,6 @@
 # marker-docker
 
-`marker-docker` 构建和发布通用的 `marker-service` 镜像。该镜像把 Marker 封装为稳定的 HTTP 服务，不绑定任何业务系统或 Docker Compose 配置。
+`marker-docker` 构建和发布通用的 `marker-api` 镜像。该镜像把 Marker 封装为稳定的 HTTP 服务，不绑定任何业务系统或 Docker Compose 配置。
 
 ## HTTP 契约
 
@@ -18,7 +18,7 @@
 工作流发布精确版本标签：
 
 ```text
-ghcr.io/<owner>/marker-service:<marker-version>-r1
+ghcr.io/<owner>/marker-api:<marker-version>-r1
 ```
 
 例如，基于 Marker `1.10.2` 的首个适配器发布标签为 `1.10.2-r1`。部署方应固定使用精确标签或 digest，不使用 `latest`。本仓库不提供 Compose 文件，也不包含任何业务应用配置。
@@ -26,7 +26,7 @@ ghcr.io/<owner>/marker-service:<marker-version>-r1
 本地构建：
 
 ```text
-docker build --build-arg MARKER_PDF_VERSION=1.10.2 --tag marker-service:1.10.2-r1 .
+docker build --build-arg MARKER_PDF_VERSION=1.10.2 --tag marker-api:1.10.2-r1 .
 ```
 
 ## 发布工作流
@@ -35,7 +35,7 @@ docker build --build-arg MARKER_PDF_VERSION=1.10.2 --tag marker-service:1.10.2-r
 
 1. 构建对应版本的镜像。
 2. 启动容器，检查 `/health` 与空文件的 `/marker` 契约。
-3. 推送 `ghcr.io/<owner>/marker-service:<marker-version>-r1`。
+3. 推送 `ghcr.io/<owner>/marker-api:<marker-version>-r1`。
 4. 创建同名 Git tag 和 GitHub Release。
 
 主版本升级不会自动发布，因为 Marker 的 Python API 和解析行为可能存在不兼容变更。此类升级需要先修改适配器并补充实际文档的契约验收，再将工作流中的受支持主版本改为新版本。

@@ -8,7 +8,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 
 
-app = FastAPI(title="marker-service")
+app = FastAPI(title="marker-api")
 logger = logging.getLogger(__name__)
 
 _converter_lock = threading.Lock()

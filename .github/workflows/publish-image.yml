@@ -1,4 +1,4 @@
-name: Publish marker service image
+name: Publish marker API image
 
 on:
   workflow_call:
@@ -43,16 +43,16 @@ jobs:
           set -euo pipefail
           docker buildx build --load \
             --build-arg "MARKER_PDF_VERSION=${INPUT_MARKER_VERSION}" \
-            --tag marker-service:contract-test \
+            --tag marker-api:contract-test \
             .
 
       - name: Verify HTTP contract
         shell: bash
         run: |
           set -euo pipefail
-          docker run --detach --rm --name marker-service-contract-test \
-            --publish 18000:8000 marker-service:contract-test
-          trap 'docker rm --force marker-service-contract-test >/dev/null 2>&1 || true' EXIT
+          docker run --detach --rm --name marker-api-contract-test \
+            --publish 18000:8000 marker-api:contract-test
+          trap 'docker rm --force marker-api-contract-test >/dev/null 2>&1 || true' EXIT
 
           for attempt in {1..30}; do
             if curl --fail --silent http://127.0.0.1:18000/health | jq -e '.status == "ok"' >/dev/null; then
@@ -81,12 +81,12 @@ jobs:
         run: |
           set -euo pipefail
           marker_version="${INPUT_MARKER_VERSION:-}"
-          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/marker-service"
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/marker-api"
           release_tag="v${marker_version}-r1"
-          docker tag marker-service:contract-test "$image:${marker_version}-r1"
+          docker tag marker-api:contract-test "$image:${marker_version}-r1"
           docker push "$image:${marker_version}-r1"
           if ! gh release view "$release_tag" >/dev/null 2>&1; then
             gh release create "$release_tag" \
               --title "Marker ${marker_version} adapter r1" \
-              --notes "Marker ${marker_version} image passed the marker-service HTTP contract baseline."
+              --notes "Marker ${marker_version} image passed the marker-api HTTP contract baseline."
           fi
