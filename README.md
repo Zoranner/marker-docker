@@ -48,7 +48,7 @@ docker build --build-arg MARKER_PDF_VERSION=1.10.2 --tag marker-api:1.10.2-r1 .
 
 ```text
 python -m pytest tests -q
-python -m compileall marker_api
+python -m compileall src
 ```
 
 本机需要 Docker 才能验证完整镜像构建和容器 HTTP 契约。Marker 首次处理真实文档可能需要下载模型；这不由健康检查或空文件契约检查覆盖。

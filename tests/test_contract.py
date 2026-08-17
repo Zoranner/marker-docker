@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from marker_api.main import app
+from app import app
 
 
 def test_health_returns_ready_status() -> None:
@@ -21,7 +21,7 @@ def test_marker_rejects_empty_upload() -> None:
 
 
 def test_marker_returns_markdown_and_rendered_payload(monkeypatch) -> None:
-    from marker_api import main
+    import app as main
 
     monkeypatch.setattr(
         main,

@@ -1,1 +1,0 @@
-"""Marker HTTP adapter package."""

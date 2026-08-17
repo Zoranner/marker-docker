@@ -14,8 +14,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \
   && pip install --no-cache-dir "marker-pdf[full]==${MARKER_PDF_VERSION}"
 
-COPY marker_api ./marker_api
+COPY src ./
 
 EXPOSE 8000
 
-CMD ["uvicorn", "marker_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
