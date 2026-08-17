@@ -9,5 +9,6 @@
 *.yml text eol=lf
 *.toml text eol=lf
 uv.lock text eol=lf
+*.base64 text eol=lf
 *.py text eol=lf
 Dockerfile text eol=lf

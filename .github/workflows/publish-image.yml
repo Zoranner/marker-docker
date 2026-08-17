@@ -25,7 +25,7 @@ jobs:
         run: |
           set -euo pipefail
           marker_version="${INPUT_MARKER_VERSION:-}"
-          [[ "$marker_version" =~ ^1\.[0-9]+\.[0-9]+$ ]]
+          [[ "$marker_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
 
       - uses: astral-sh/setup-uv@v6
         with:
@@ -58,7 +58,7 @@ jobs:
           set -euo pipefail
           docker run --detach --rm --name marker-api-contract-test \
             --publish 18000:8000 marker-api:contract-test
-          trap 'docker rm --force marker-api-contract-test >/dev/null 2>&1 || true' EXIT
+          trap 'docker logs marker-api-contract-test || true; docker rm --force marker-api-contract-test >/dev/null 2>&1 || true' EXIT
 
           for attempt in {1..30}; do
             if curl --fail --silent http://127.0.0.1:18000/health | jq -e '.status == "ok"' >/dev/null; then
@@ -72,6 +72,13 @@ jobs:
             --form 'file=@/dev/null;filename=empty.pdf' http://127.0.0.1:18000/marker)"
           test "$status" = 400
           jq -e '.detail == "uploaded file is empty"' response.json >/dev/null
+
+          base64 --decode tests/fixtures/marker-contract.pdf.base64 > marker-contract.pdf
+          status="$(curl --silent --show-error --max-time 1200 --output response.json --write-out '%{http_code}' \
+            --form 'file=@marker-contract.pdf;type=application/pdf' http://127.0.0.1:18000/marker)"
+          test "$status" = 200
+          jq -e '.markdown | type == "string" and length > 0' response.json >/dev/null
+          jq -er '.markdown' response.json | tr -s '[:space:]' ' ' | grep --fixed-strings 'Marker API contract' >/dev/null
 
       - uses: docker/login-action@v3
         with:
