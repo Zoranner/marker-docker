@@ -1,0 +1,81 @@
+name: Check Marker upstream
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+    inputs:
+      marker_version:
+        description: Stable Marker release version to evaluate, without the v prefix
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: marker-upstream-release
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      marker_version: ${{ steps.version.outputs.marker_version }}
+      should_publish: ${{ steps.version.outputs.should_publish }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - id: version
+        env:
+          INPUT_MARKER_VERSION: ${{ inputs.marker_version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          requested="${INPUT_MARKER_VERSION:-}"
+          supported_major=1
+          if [[ -n "$requested" ]]; then
+            marker_version="$requested"
+          else
+            releases="$(curl --fail-with-body --silent --show-error \
+              'https://api.github.com/repos/datalab-to/marker/releases?per_page=100')"
+            latest_version="$(jq -r '[.[] | select(.draft | not) | select(.prerelease | not) | .tag_name][0]' <<< "$releases")"
+            marker_version="$(jq -r --arg major "v${supported_major}." \
+              '[.[] | select(.draft | not) | select(.prerelease | not) | .tag_name | select(startswith($major))][0]' \
+              <<< "$releases")"
+            latest_version="${latest_version#v}"
+            if [[ "${latest_version%%.*}" != "$supported_major" ]]; then
+              echo "Marker $latest_version requires adapter review; evaluating the latest supported $supported_major.x release instead." >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
+          marker_version="${marker_version#v}"
+          [[ "$marker_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+
+          if [[ "${marker_version%%.*}" != "$supported_major" ]]; then
+            echo "Marker $marker_version is outside the supported major version $supported_major." >> "$GITHUB_STEP_SUMMARY"
+            echo "marker_version=$marker_version" >> "$GITHUB_OUTPUT"
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          release_tag="v${marker_version}-r1"
+          if git rev-parse --verify --quiet "refs/tags/$release_tag"; then
+            echo "Marker $marker_version has already been published as $release_tag." >> "$GITHUB_STEP_SUMMARY"
+            should_publish=false
+          else
+            echo "Marker $marker_version will be built and checked against the adapter contract." >> "$GITHUB_STEP_SUMMARY"
+            should_publish=true
+          fi
+          echo "marker_version=$marker_version" >> "$GITHUB_OUTPUT"
+          echo "should_publish=$should_publish" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: resolve
+    if: needs.resolve.outputs.should_publish == 'true'
+    uses: ./.github/workflows/publish-image.yml
+    with:
+      marker_version: ${{ needs.resolve.outputs.marker_version }}
+    secrets: inherit
