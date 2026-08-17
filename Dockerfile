@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-ARG MARKER_PDF_VERSION=1.10.2
+COPY --from=ghcr.io/astral-sh/uv:0.7.17 /uv /uvx /bin/
 
 WORKDIR /app
 
@@ -10,12 +10,11 @@ RUN apt-get update \
     libglib2.0-0 \
   && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt \
-  && pip install --no-cache-dir "marker-pdf[full]==${MARKER_PDF_VERSION}"
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
 
 COPY src ./
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["/app/.venv/bin/uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -26,14 +26,14 @@ ghcr.io/<owner>/marker-api:<marker-version>-r1
 本地构建：
 
 ```text
-docker build --build-arg MARKER_PDF_VERSION=1.10.2 --tag marker-api:1.10.2-r1 .
+docker build --tag marker-api:1.10.2-r1 .
 ```
 
 ## 发布工作流
 
 `Check Marker upstream` 每天查询 `datalab-to/marker` 的稳定 Release，并选取最新受支持主版本。只有尚未发布的版本才会调用发布工作流。发布工作流会：
 
-1. 构建对应版本的镜像。
+1. 使用 uv 将目标 Marker 版本写入临时锁文件后构建镜像。
 2. 启动容器，检查 `/health` 与空文件的 `/marker` 契约。
 3. 推送 `ghcr.io/<owner>/marker-api:<marker-version>-r1`。
 4. 创建同名 Git tag 和 GitHub Release。
@@ -47,8 +47,8 @@ docker build --build-arg MARKER_PDF_VERSION=1.10.2 --tag marker-api:1.10.2-r1 .
 安装测试依赖后执行：
 
 ```text
-python -m pytest tests -q
-python -m compileall src
+uv run --group dev pytest tests -q
+uv run --no-sync python -m compileall src
 ```
 
-本机需要 Docker 才能验证完整镜像构建和容器 HTTP 契约。Marker 首次处理真实文档可能需要下载模型；这不由健康检查或空文件契约检查覆盖。
+`pyproject.toml` 和 `uv.lock` 是唯一依赖来源，不使用 requirements 文件。本机需要 Docker 才能验证完整镜像构建和容器 HTTP 契约。Marker 首次处理真实文档可能需要下载模型；这不由健康检查或空文件契约检查覆盖。
