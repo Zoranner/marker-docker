@@ -59,6 +59,7 @@ jobs:
     if: needs.resolve.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
     outputs:
+      marker_version: ${{ steps.version.outputs.marker_version }}
       version: ${{ steps.version.outputs.version }}
       image: ${{ steps.version.outputs.image }}
       release_tag: ${{ steps.version.outputs.release_tag }}
@@ -74,6 +75,7 @@ jobs:
           [[ "$MARKER_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           [[ "$RELEASE_REVISION" =~ ^[1-9][0-9]*$ ]]
           version="${MARKER_VERSION}-r${RELEASE_REVISION}"
+          echo "marker_version=$MARKER_VERSION" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "image=ghcr.io/zoranner/marker-api" >> "$GITHUB_OUTPUT"
           echo "release_tag=v$version" >> "$GITHUB_OUTPUT"
@@ -92,7 +94,7 @@ jobs:
       - name: Lock Target Marker Version
         shell: bash
         env:
-          MARKER_VERSION: ${{ needs.resolve.outputs.marker_version }}
+          MARKER_VERSION: ${{ needs.prepare.outputs.marker_version }}
         run: |
           set -euo pipefail
           uv add --no-sync "marker-pdf[full]==${MARKER_VERSION}"
@@ -160,7 +162,7 @@ jobs:
       - name: Lock Target Marker Version
         shell: bash
         env:
-          MARKER_VERSION: ${{ needs.resolve.outputs.marker_version }}
+          MARKER_VERSION: ${{ needs.prepare.outputs.marker_version }}
         run: |
           set -euo pipefail
           uv add --no-sync "marker-pdf[full]==${MARKER_VERSION}"
