@@ -31,7 +31,7 @@ docker build --tag marker-api:2.0.0-r1 .
 
 ## 发布工作流
 
-`Check Upstream Release` 每天在 `02:17 UTC` 查询 `datalab-to/marker` 的最新稳定 Release。GitHub 的计划工作流可能延迟执行。工作流根据同一 Marker 版本已有的 Release tag 和镜像输入文件，确定是否需要发布新的适配器修订。发布工作流会：
+`Release Marker API` 每天在 `02:17 UTC` 查询 `datalab-to/marker` 的最新稳定 Release。GitHub 的计划工作流可能延迟执行。工作流根据同一 Marker 版本已有的 Release tag 和镜像输入文件，确定是否需要发布新的适配器修订。发布工作流会：
 
 1. 使用 uv 将目标 Marker 版本写入临时锁文件后构建镜像。
 2. 启动容器，检查 `/health`、空文件错误和真实 PDF 的 `/marker` 转换契约。
@@ -42,14 +42,14 @@ docker build --tag marker-api:2.0.0-r1 .
 
 ### 手动发布
 
-发布入口只有 `Check Upstream Release`，内部 `Release Marker API Image` 不提供手动触发，以避免绕过上游版本与修订号检查。
+发布入口只有 `Release Marker API`。它在同一次运行中完成上游检查、版本决策、契约验证、双平台镜像构建和 Release 发布，避免出现重复或含义不明的 Actions 入口。
 
-在 GitHub 仓库的 **Actions** 页面选择 `Check Upstream Release`，点击 **Run workflow**，分支选择 `master`。该工作流不接受版本输入，始终选择 Marker 最新稳定 Release。
+在 GitHub 仓库的 **Actions** 页面选择 `Release Marker API`，点击 **Run workflow**，分支选择 `master`。该工作流不接受版本输入，始终选择 Marker 最新稳定 Release。
 
 工作流会检查同一 Marker 版本的最新 `v<marker-version>-r<revision>` tag，并比较该 tag 与当前提交的镜像输入文件。输入未变化时记录跳过原因；输入变化时递增修订号并构建发布。也可使用 GitHub CLI：
 
 ```text
-gh workflow run "Check Upstream Release" --ref master
+gh workflow run "Release Marker API" --ref master
 ```
 
 首次执行前，仓库或所属组织的 Actions 策略必须允许工作流令牌拥有 `contents: write` 和 `packages: write`，否则 Git tag、GitHub Release、离线镜像归档上传或 GHCR 推送会失败。
