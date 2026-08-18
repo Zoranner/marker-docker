@@ -1,4 +1,4 @@
-name: Publish marker API image
+name: Release Marker API Image
 
 on:
   workflow_call:
@@ -7,44 +7,62 @@ on:
         description: Stable Marker release version, without the v prefix
         required: true
         type: string
+      release_revision:
+        description: Marker API image revision for the selected Marker release
+        required: true
+        type: string
 
 permissions:
   contents: write
   packages: write
 
 jobs:
-  publish:
+  prepare:
+    name: Prepare Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      image: ${{ steps.version.outputs.image }}
+      release_tag: ${{ steps.version.outputs.release_tag }}
+    steps:
+      - id: version
+        name: Validate Release Version
+        shell: bash
+        env:
+          MARKER_VERSION: ${{ inputs.marker_version }}
+          RELEASE_REVISION: ${{ inputs.release_revision }}
+        run: |
+          set -euo pipefail
+          [[ "$MARKER_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$RELEASE_REVISION" =~ ^[1-9][0-9]*$ ]]
+          version="${MARKER_VERSION}-r${RELEASE_REVISION}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/zoranner/marker-api" >> "$GITHUB_OUTPUT"
+          echo "release_tag=v$version" >> "$GITHUB_OUTPUT"
+
+  verify:
+    name: Verify Image Contract
+    needs: prepare
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-
-      - name: Validate version
-        env:
-          INPUT_MARKER_VERSION: ${{ inputs.marker_version }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          marker_version="${INPUT_MARKER_VERSION:-}"
-          [[ "$marker_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
 
       - uses: astral-sh/setup-uv@v6
         with:
           version: 0.7.17
 
-      - name: Lock target Marker version
-        env:
-          INPUT_MARKER_VERSION: ${{ inputs.marker_version }}
+      - name: Lock Target Marker Version
         shell: bash
+        env:
+          MARKER_VERSION: ${{ inputs.marker_version }}
         run: |
           set -euo pipefail
-          uv add --no-sync "marker-pdf[full]==${INPUT_MARKER_VERSION}"
+          uv add --no-sync "marker-pdf[full]==${MARKER_VERSION}"
           uv lock --check
 
       - uses: docker/setup-buildx-action@v3
 
-      - name: Build adapter image
-        env:
-          INPUT_MARKER_VERSION: ${{ inputs.marker_version }}
+      - name: Build Contract Image
         shell: bash
         run: |
           set -euo pipefail
@@ -52,7 +70,7 @@ jobs:
             --tag marker-api:contract-test \
             .
 
-      - name: Verify HTTP contract
+      - name: Verify HTTP Contract
         shell: bash
         run: |
           set -euo pipefail
@@ -80,26 +98,129 @@ jobs:
           jq -e '.markdown | type == "string" and length > 0' response.json >/dev/null
           jq -er '.markdown' response.json | tr -s '[:space:]' ' ' | grep --fixed-strings 'Marker API contract' >/dev/null
 
+  build-platform:
+    name: Build Image (${{ matrix.platform }})
+    needs: [prepare, verify]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            platform: linux/amd64
+            archive_suffix: linux-amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            archive_suffix: linux-arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: 0.7.17
+
+      - name: Lock Target Marker Version
+        shell: bash
+        env:
+          MARKER_VERSION: ${{ inputs.marker_version }}
+        run: |
+          set -euo pipefail
+          uv add --no-sync "marker-pdf[full]==${MARKER_VERSION}"
+          uv lock --check
+
+      - uses: docker/setup-buildx-action@v3
+
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      - name: Publish image and release
+      - uses: docker/build-push-action@v6
+        id: build
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ needs.prepare.outputs.image }},push-by-digest=true,name-canonical=true,push=true
+          provenance: false
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
+
+      - name: Export Offline Image
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
-          INPUT_MARKER_VERSION: ${{ inputs.marker_version }}
+          IMAGE: ${{ needs.prepare.outputs.image }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
-          marker_version="${INPUT_MARKER_VERSION:-}"
-          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/marker-api"
-          release_tag="v${marker_version}-r1"
-          docker tag marker-api:contract-test "$image:${marker_version}-r1"
-          docker push "$image:${marker_version}-r1"
-          if ! gh release view "$release_tag" >/dev/null 2>&1; then
-            gh release create "$release_tag" \
-              --title "Marker ${marker_version} adapter r1" \
-              --notes "Marker ${marker_version} image passed the marker-api HTTP contract baseline."
-          fi
+          archive="marker-api-${VERSION}-${{ matrix.archive_suffix }}.tar"
+          docker pull "$IMAGE@$DIGEST"
+          image_id="$(docker image inspect --format '{{.Id}}' "$IMAGE@$DIGEST")"
+          docker image tag "$image_id" "$IMAGE:$VERSION"
+          docker image save --output "$archive" "$IMAGE:$VERSION"
+          mkdir -p digests
+          touch "digests/${DIGEST#sha256:}"
+
+      - name: Upload Platform Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: marker-api-${{ matrix.archive_suffix }}
+          path: |
+            marker-api-${{ needs.prepare.outputs.version }}-${{ matrix.archive_suffix }}.tar
+            digests/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish Release
+    needs: [prepare, build-platform]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Download Platform Artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: marker-api-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create Multi-platform Image
+        shell: bash
+        env:
+          IMAGE: ${{ needs.prepare.outputs.image }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          mapfile -t digest_files < <(find artifacts -type f -path '*/digests/*' | sort)
+          test "${#digest_files[@]}" -eq 2
+          references=()
+          for digest_file in "${digest_files[@]}"; do
+            references+=("$IMAGE@sha256:$(basename "$digest_file")")
+          done
+          docker buildx imagetools create \
+            --tag "$IMAGE:$VERSION" \
+            "${references[@]}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.prepare.outputs.release_tag }}
+          target_commitish: ${{ github.sha }}
+          name: Marker API ${{ needs.prepare.outputs.version }}
+          body: |
+            Image: ${{ needs.prepare.outputs.image }}:${{ needs.prepare.outputs.version }}
+            Offline images: marker-api-${{ needs.prepare.outputs.version }}-linux-amd64.tar, marker-api-${{ needs.prepare.outputs.version }}-linux-arm64.tar
+          files: |
+            artifacts/marker-api-${{ needs.prepare.outputs.version }}-linux-amd64.tar
+            artifacts/marker-api-${{ needs.prepare.outputs.version }}-linux-arm64.tar
+          fail_on_unmatched_files: true
+          overwrite_files: true
