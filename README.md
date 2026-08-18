@@ -36,7 +36,9 @@ docker build --tag marker-api:2.0.0-r1 .
 1. 使用 uv 将目标 Marker 版本写入临时锁文件后构建镜像。
 2. 启动容器，检查 `/health`、空文件错误和真实 PDF 的 `/marker` 转换契约。
 3. 在 `linux/amd64` 与 `linux/arm64` 原生 runner 构建镜像，合并为 `ghcr.io/zoranner/marker-api:<marker-version>-r<revision>`。
-4. 创建 `v<marker-version>-r<revision>` Git tag 和 GitHub Release，并上传两个可用 `docker load` 导入的离线镜像归档。
+4. 创建 `v<marker-version>-r<revision>` Git tag 和 GitHub Release，并上传两个离线镜像归档的分片及其 SHA-256 清单。
+
+每个离线镜像归档会拆分为小于 2 GiB 的 `*.tar.part-*` 文件，以符合 GitHub Release 附件限制。校验同目录的 `.sha256` 清单后，按文件名顺序合并分片还原 `.tar`，再使用 `docker load` 导入。
 
 同一 Marker 版本首次发布使用 `r1`。若 `src/`、`Dockerfile`、`pyproject.toml` 或 `uv.lock` 在最新同版本 Release 后发生变化，工作流自动递增修订号并发布 `r2`、`r3` 等后续版本；README、测试和工作流文案变更不会触发镜像重发。上游出现新的稳定大版本时，工作流从 `r1` 开始构建并执行真实 PDF 转换；构建或转换失败则不会推送镜像、创建 Git tag 或 GitHub Release。
 

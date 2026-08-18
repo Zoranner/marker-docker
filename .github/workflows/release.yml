@@ -85,7 +85,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v10
         with:
           version: 0.7.17
 
@@ -98,7 +98,7 @@ jobs:
           uv add --no-sync "marker-pdf[full]==${MARKER_VERSION}"
           uv lock --check
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Build Contract Image
         shell: bash
@@ -153,7 +153,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v10
         with:
           version: 0.7.17
 
@@ -166,15 +166,15 @@ jobs:
           uv add --no-sync "marker-pdf[full]==${MARKER_VERSION}"
           uv lock --check
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         id: build
         with:
           context: .
@@ -186,7 +186,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
 
-      - name: Export Offline Image
+      - name: Export Offline Image Parts
         shell: bash
         env:
           IMAGE: ${{ needs.prepare.outputs.image }}
@@ -199,6 +199,10 @@ jobs:
           image_id="$(docker image inspect --format '{{.Id}}' "$IMAGE@$DIGEST")"
           docker image tag "$image_id" "$IMAGE:$VERSION"
           docker image save --output "$archive" "$IMAGE:$VERSION"
+          split --bytes=1900m --numeric-suffixes=1 --suffix-length=2 \
+            "$archive" "${archive}.part-"
+          sha256sum "${archive}".part-* > "${archive}.sha256"
+          rm "$archive"
           mkdir -p digests
           touch "digests/${DIGEST#sha256:}"
 
@@ -207,7 +211,8 @@ jobs:
         with:
           name: marker-api-${{ matrix.archive_suffix }}
           path: |
-            marker-api-${{ needs.prepare.outputs.version }}-${{ matrix.archive_suffix }}.tar
+            marker-api-${{ needs.prepare.outputs.version }}-${{ matrix.archive_suffix }}.tar.part-*
+            marker-api-${{ needs.prepare.outputs.version }}-${{ matrix.archive_suffix }}.tar.sha256
             digests/*
           if-no-files-found: error
 
@@ -216,9 +221,9 @@ jobs:
     needs: [prepare, build-platform]
     runs-on: ubuntu-latest
     steps:
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -256,9 +261,10 @@ jobs:
           name: Marker API ${{ needs.prepare.outputs.version }}
           body: |
             Image: ${{ needs.prepare.outputs.image }}:${{ needs.prepare.outputs.version }}
-            Offline images: marker-api-${{ needs.prepare.outputs.version }}-linux-amd64.tar, marker-api-${{ needs.prepare.outputs.version }}-linux-arm64.tar
+            Offline image parts: marker-api-${{ needs.prepare.outputs.version }}-linux-amd64.tar.part-*, marker-api-${{ needs.prepare.outputs.version }}-linux-arm64.tar.part-*
+            Checksums: marker-api-${{ needs.prepare.outputs.version }}-linux-amd64.tar.sha256, marker-api-${{ needs.prepare.outputs.version }}-linux-arm64.tar.sha256
           files: |
-            artifacts/marker-api-${{ needs.prepare.outputs.version }}-linux-amd64.tar
-            artifacts/marker-api-${{ needs.prepare.outputs.version }}-linux-arm64.tar
+            artifacts/marker-api-*.tar.part-*
+            artifacts/marker-api-*.tar.sha256
           fail_on_unmatched_files: true
           overwrite_files: true
